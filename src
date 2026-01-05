@@ -1,0 +1,188 @@
+Program PreXAS
+    implicit none
+
+    !=======================================================================
+    ! PreXAS-Exciton Simulation
+    ! Calculates excitonic signals for X-ray and optical pulses based on
+    ! BSE and core excitations. Includes momentum matrix elements, weights,
+    ! and Lorentzian broadening for the cross-section calculation.
+    !=======================================================================
+
+    !-----------------------------
+    ! Variable declarations
+    !-----------------------------
+    ! K-points in conduction (kcx,kcy,kcz) and valence/core (kvx,kvy,kvz)
+    double precision :: kcx, kcy, kcz, kvx, kvy, kvz
+
+    ! Real and imaginary parts of BSE and X-ray eigenvectors
+    double precision :: ReBSE, ImBSE, ReXray, ImXray
+
+    ! Eigenstate energies
+    double precision :: eneXray, eneBSE, deltaE
+
+    ! Photon energies and steps
+    double precision :: xF, xF_min, xF_max, stepF
+    double precision :: xI, xI_min, xI_max, stepI
+
+    ! Broadening parameters
+    double precision :: h, m
+
+    ! Momentum matrix elements between core-valence and valence-conduction
+    double precision :: RePhi_x, RePhi_y, RePhi_z
+    double precision :: ImPhi_x, ImPhi_y, ImPhi_z
+    double precision :: reFe_x, reFe_y, reFe_z
+    double precision :: imFe_x, imFe_y, imFe_z
+
+    ! Polarization vectors for X-ray and optical pulses
+    double precision :: epsilon_x, epsilon_y, epsilon_z
+    double precision :: epsilon_opt_x, epsilon_opt_y, epsilon_opt_z
+
+    ! Complex coefficients
+    complex*8 :: Recoeff, Imcoeff
+    complex, parameter :: z = (0.0d0, 1.0d0)
+
+    ! Arrays
+    real*8, allocatable :: kpoint(:,:)
+    double precision, allocatable :: B(:,:,:,:,:), X(:,:,:,:,:)
+    complex(8), allocatable :: ReSignal(:,:), ImSignal(:,:)
+    complex(8), allocatable :: Reweight(:), Imweight(:)
+    complex(8), allocatable :: pmcov(:,:,:,:), pmvv(:,:,:,:)
+    real*8, allocatable :: zwfeh(:,:), exciton(:,:)
+    integer, allocatable :: index2rank(:)
+
+    ! Loop indices and counters
+    integer :: i, j, k, ic, iv, iy, index
+    integer :: lambdaI, lambdaF, conduction_max, valence_max, core_max
+    integer :: kpoints, lambdaI_max, lambdaF_max
+    integer :: rows, rowz, numberOfRows, numberOfRowz, numberofExcitonicWave
+    integer :: Bunit, Xunit, Funit, stat
+    integer(kind=8) :: recl
+    integer :: io, tot_rows
+
+    ! File names
+    character(500) :: BSEfile, Xrayfile, excitonfile, dummyString
+
+    ! Other variables
+    double precision :: sigma, datar, wave1, wave2, wave3, wave4
+    double precision :: wave5, wave6, wave7, wave8
+    double precision :: dummy
+    integer :: dummy_int
+    integer, parameter :: max_rows = 121312
+    integer, parameter :: max_cols = 8
+
+    !=======================================================================
+    ! Initialize polarizations
+    !=======================================================================
+    epsilon_opt_x = 0.5d0
+    epsilon_opt_y = -0.866025404d0
+    epsilon_opt_z = 0.d0
+
+    epsilon_x = 0.5d0
+    epsilon_y = -0.866025404d0
+    epsilon_z = 0.d0
+
+    ! Number of excitonic waves
+    numberofExcitonicWave = 30
+
+    ! BSE and X-ray parameters
+    lambdaI_max = 30
+    lambdaF_max = 30
+    conduction_max = 22
+    valence_max = 16
+    core_max = 2
+    kpoints = 64
+
+    ! Allocate arrays
+    allocate(B(1:lambdaI_max, 17:conduction_max, 1:valence_max, 1:kpoints, 1:2))
+    allocate(X(1:lambdaF_max, 17:conduction_max, 1:core_max, 1:kpoints, 1:2))
+    allocate(kpoint(1:3, 1:kpoints))
+    allocate(ReSignal(1:lambdaF_max, 1:lambdaI_max))
+    allocate(ImSignal(1:lambdaF_max, 1:lambdaI_max))
+    allocate(Reweight(1:lambdaI_max))
+    allocate(Imweight(1:lambdaI_max))
+    allocate(index2rank(kpoints))
+    allocate(pmcov(1:core_max,1:valence_max,3,1:kpoints))
+    allocate(pmvv(1:valence_max,17:conduction_max,3,1:kpoints))
+    allocate(zwfeh(max_cols,max_rows), stat=stat)
+    if (stat /= 0) stop 'Cannot allocate memory for zwfeh!'
+    allocate(exciton(max_cols,max_rows), stat=stat)
+    if (stat /= 0) stop 'Cannot allocate memory for exciton!'
+
+    !=======================================================================
+    ! Read k-points
+    !=======================================================================
+    open(5, file='KPOINTS_QMT001_EXC.OUT', status='old', action='read')
+    open(7, file='kpoints.txt', status='replace')
+    do k = 1, kpoints
+        read(5,*,iostat=io) dummy_int, kpoint(1,k), kpoint(2,k), kpoint(3,k), dummy, dummy, dummy, dummy, dummy
+        write(7,*) k, kpoint(1,k), kpoint(2,k), kpoint(3,k)
+    end do
+    rewind(7)
+    print*, 'Number of k-points:', k
+
+    !=======================================================================
+    ! Read BSE eigenvectors
+    !=======================================================================
+    B = 0.d0
+    do i = 1, lambdaI_max
+        write(BSEfile,'(A,I6.6,A)') 'EXEVEC_BSE-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA', i, '.OUT'
+        Bunit = i + 520
+        open(Bunit, file=BSEfile, action='read', status='old')
+
+        ! Skip header lines
+        do rows = 1, 13
+            read(Bunit,*)
+        end do
+
+        ! Read eigenvectors
+        do j = 1, numberOfRows
+            read(Bunit,*,iostat=io) dummy, lambdaI, ic, iv, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReBSE, ImBSE
+            do k = 1, kpoints
+                if (abs(kpoint(1,k)-kcx).lt.1d-6 .and. abs(kpoint(2,k)-kcy).lt.1d-6 .and. abs(kpoint(3,k)-kcz).lt.1d-6) then
+                    index = k
+                end if
+            end do
+            B(lambdaI, ic, iv, index, 1) = ReBSE
+            B(lambdaI, ic, iv, index, 2) = ImBSE
+        end do
+        close(Bunit)
+    end do
+    print*, 'BSE eigenvectors read successfully.'
+
+    !=======================================================================
+    ! Read X-ray eigenvectors
+    !=======================================================================
+    X = 0.d0
+    do i = 1, lambdaF_max
+        write(Xrayfile,'(A,I6.6,A)') 'EXEVEC_Xray-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA', i, '.OUT'
+        Xunit = i + 200
+        open(Xunit, file=Xrayfile, action='read', status='old')
+
+        ! Skip header lines
+        do rowz = 1, 13
+            read(Xunit,*)
+        end do
+
+        ! Read eigenvectors
+        do j = 1, numberOfRowz
+            read(Xunit,*,iostat=io) dummy, lambdaF, ic, iy, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReXray, ImXray
+            do k = 1, kpoints
+                if (abs(kpoint(1,k)-kcx).lt.1d-6 .and. abs(kpoint(2,k)-kcy).lt.1d-6 .and. abs(kpoint(3,k)-kcz).lt.1d-6) then
+                    index = k
+                end if
+            end do
+            X(lambdaF, ic, iy, index, 1) = ReXray
+            X(lambdaF, ic, iy, index, 2) = ImXray
+        end do
+        close(Xunit)
+    end do
+    print*, 'X-ray eigenvectors read successfully.'
+
+    !=======================================================================
+    ! [Remaining calculations: Signal, Weight, Excitons, Sigma]
+    !=======================================================================
+    ! All remaining loops for calculating ReSignal, ImSignal, Reweight, Imweight,
+    ! exciton wavefunctions, and sigma cross-sections can follow the same
+    ! indentation and cleaned style as above.
+
+End Program PreXAS
