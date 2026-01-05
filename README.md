@@ -1,7 +1,5 @@
-# PreXAS-Exciton
-BSE-based code for X-ray absorption spectroscopy of photoexcited materials
-
-===============================================================================
+PreXAS-Exciton: BSE-based code for X-ray absorption spectroscopy of photoexcited materials
+===========================================================================================
 
 This repository contains a research code for the ab initio simulation of
 optical-pump–x-ray-probe absorption in solids,
