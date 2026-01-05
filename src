@@ -1,188 +1,651 @@
-Program PreXAS
+
+Program preXAS-Exciton
+
     implicit none
-
-    !=======================================================================
-    ! PreXAS-Exciton Simulation
-    ! Calculates excitonic signals for X-ray and optical pulses based on
-    ! BSE and core excitations. Includes momentum matrix elements, weights,
-    ! and Lorentzian broadening for the cross-section calculation.
-    !=======================================================================
-
-    !-----------------------------
-    ! Variable declarations
-    !-----------------------------
-    ! K-points in conduction (kcx,kcy,kcz) and valence/core (kvx,kvy,kvz)
+! kcx to kcz is a brief defination of kpoints in three dimension x, y,z in conduction bands 
+! and respectively the same for kvx to kvz for valence bands and core states
     double precision :: kcx, kcy, kcz, kvx, kvy, kvz
-
-    ! Real and imaginary parts of BSE and X-ray eigenvectors
-    double precision :: ReBSE, ImBSE, ReXray, ImXray
-
-    ! Eigenstate energies
-    double precision :: eneXray, eneBSE, deltaE
-
-    ! Photon energies and steps
-    double precision :: xF, xF_min, xF_max, stepF
-    double precision :: xI, xI_min, xI_max, stepI
-
-    ! Broadening parameters
+! Re and Im means repectively real part and imaginary part of a complex number
+! BSE means valence-excitations and Xray means core-excitations
+! ene is brief of energy corresponds to BSE and Xray
+    double precision :: ReBSE, ImBSE, ReXray, ImXray, eneXray, eneBSE, deltaE
+! xF stands for \omega_x in the text file and I assumed min and max for the signal which starts and ends and also steps to raise the amount 
+    double precision :: xF, xF_min, xF_max, stepF, xI_min, xI_max, stepI
+! h is the \GAMMA which stands for broadening (the broadening \Gamma_I and \GAMMA_F are the same in previous calculations and here we also take the same value) h=0.48 eV
     double precision :: h, m
-
-    ! Momentum matrix elements between core-valence and valence-conduction
-    double precision :: RePhi_x, RePhi_y, RePhi_z
-    double precision :: ImPhi_x, ImPhi_y, ImPhi_z
-    double precision :: reFe_x, reFe_y, reFe_z
-    double precision :: imFe_x, imFe_y, imFe_z
-
-    ! Polarization vectors for X-ray and optical pulses
-    double precision :: epsilon_x, epsilon_y, epsilon_z
-    double precision :: epsilon_opt_x, epsilon_opt_y, epsilon_opt_z
-
-    ! Complex coefficients
-    complex*8 :: Recoeff, Imcoeff
-    complex, parameter :: z = (0.0d0, 1.0d0)
-
-    ! Arrays
-    real*8, allocatable :: kpoint(:,:)
-    double precision, allocatable :: B(:,:,:,:,:), X(:,:,:,:,:)
-    complex(8), allocatable :: ReSignal(:,:), ImSignal(:,:)
-    complex(8), allocatable :: Reweight(:), Imweight(:)
-    complex(8), allocatable :: pmcov(:,:,:,:), pmvv(:,:,:,:)
-    real*8, allocatable :: zwfeh(:,:), exciton(:,:)
-    integer, allocatable :: index2rank(:)
-
-    ! Loop indices and counters
-    integer :: i, j, k, ic, iv, iy, index
-    integer :: lambdaI, lambdaF, conduction_max, valence_max, core_max
-    integer :: kpoints, lambdaI_max, lambdaF_max
-    integer :: rows, rowz, numberOfRows, numberOfRowz, numberofExcitonicWave
-    integer :: Bunit, Xunit, Funit, stat
-    integer(kind=8) :: recl
-    integer :: io, tot_rows
-
-    ! File names
-    character(500) :: BSEfile, Xrayfile, excitonfile, dummyString
-
-    ! Other variables
-    double precision :: sigma, datar, wave1, wave2, wave3, wave4
-    double precision :: wave5, wave6, wave7, wave8
-    double precision :: dummy
+! xI stands for \omega_o in the text file 
+    real :: xI
+    INTEGER :: rows, numberOfRows, numberOfRowz, rowz, numberofExcitonicWave, cloumns
+    INTEGER :: lambdaI, lambdaF, conduction_max, valence_max, core_max, kpoints, lambdaI_max, lambdaF_max
+! ic = conduction, iv= valence, iy= core, index= kpoints number
+! ic is brief of conduction band and iv is brief of valence bands and iy means core states
+    INTEGER :: i, j, k, ic, iv, iy, io, index
+!axis is correspond to three direction of momentum matrix elements
+    complex, parameter :: z = (0, 1)   ! sqrt(-1)
+! B is a brief of BSE  and X is a brief of X-ray
+    real*8, dimension(:,:,:,:,:), allocatable :: B, X 
+! real and imaginary part of multipling BSE and Xray complex number, give us Recoeff, Imcoeff, coeff is a brief of coefficient
+   complex*8 :: Recoeff, Imcoeff
+! RePhi, ImPhi, is the real and imaginary part of momentum matrix elemetns based on basis functions (we have it in x,y,z direction)
+! this momentum matrix element is between core to valence
+   double precision :: RePhi_x, RePhi_y, RePhi_z, ImPhi_x, ImPhi_y, ImPhi_z
+! reFe, imFe, is the real and imaginary part of momentum matrix elemetns based on basis functions (we have it in x,y,z direction)
+! this momentum matrix element is between valence to conduction
+   double precision :: reFe_x, reFe_y, reFe_z, imFe_x, imFe_y, imFe_z
+! ReSignal and ImSignal stand for the multiplication of both excitonic wavevector in momentum matrix element (core to valence)
+   complex(8), allocatable :: ReSignal(:,:), ImSignal(:,:)
+! Reweight and Imweight are the real part and imaginary part of weight in text file
+   complex(8), allocatable :: Reweight(:), Imweight(:)
+    REAL*8,ALLOCATABLE:: kpoint(:,:) ! k-points
+    double precision :: dummy, sigma, datar ! we define dummy to avoid reading useless coloumns in read files
     integer :: dummy_int
-    integer, parameter :: max_rows = 121312
-    integer, parameter :: max_cols = 8
+    !real*8, dimension(:,:,:,:,:,:,:,:), allocatable :: zwfeh, exciton 
+    integer :: stat !Checking return values
+    real*8, dimension(:,:), allocatable :: zwfeh, exciton
+    integer, parameter :: max_rows=121312
+    integer, parameter :: max_cols=8 !Maximum columns in array
+    !real*8, allocatable :: wave
+    real*8 :: wave1, wave2, wave3, wave4, wave5, wave6, wave7, wave8
+    !INTEGER :: wave1_max, wave2_max, wave3_max, wave4_max, wave5_max, wave6_max, wave7_max, wave8_max
+    !double precision :: exciton
+! number of species
+    Integer :: rank, tot_rows
+    integer(kind=8) :: recl
+! pmcov means momentum matrix element between core and valence in fixed-kpoints
+! pmvv means momentum matrix element between valence and conduction in fixed-kpoints
+    complex(8), allocatable :: pmcov(:,:,:,:), pmvv(:,:,:,:)
+    integer, allocatable :: index2rank(:)
+! epsilon stands for polarization of x-ray pulse in x,y,z direction
+    double precision epsilon_x, epsilon_y, epsilon_z
+! epsilon_opt stands for polarization of optical pulse in x,y,z direction
+    double precision  epsilon_opt_x, epsilon_opt_y, epsilon_opt_z
+    integer :: Bunit, Xunit, Funit
+    character(500) :: dummyString
+    character(500) :: BSEfile
+    character(500) :: Xrayfile
+    character(500) :: excitonfile
 
-    !=======================================================================
-    ! Initialize polarizations
-    !=======================================================================
-    epsilon_opt_x = 0.5d0
-    epsilon_opt_y = -0.866025404d0
-    epsilon_opt_z = 0.d0
+ 
+! determine the direction of incoming optical pulse  
+    epsilon_opt_x = 0.5
+    epsilon_opt_y = -0.866025404
+    epsilon_opt_z = 0d0
 
-    epsilon_x = 0.5d0
-    epsilon_y = -0.866025404d0
-    epsilon_z = 0.d0
 
-    ! Number of excitonic waves
+! determine the direction of incoming x-ray pulse
+    epsilon_x = 0.5
+    epsilon_y = -0.866025404
+    epsilon_z = 0d0
+!0.866025404
+       
     numberofExcitonicWave = 30
-
-    ! BSE and X-ray parameters
+! allocate BSE and X-ray and kpoint files
+! determine maximum bands in condunction, valence and core, and maximum number of final and initial lambdaF and lambdaI we take into account 
     lambdaI_max = 30
     lambdaF_max = 30
     conduction_max = 22
     valence_max = 16
     core_max = 2
     kpoints = 64
-
-    ! Allocate arrays
     allocate(B(1:lambdaI_max, 17:conduction_max, 1:valence_max, 1:kpoints, 1:2))
     allocate(X(1:lambdaF_max, 17:conduction_max, 1:core_max, 1:kpoints, 1:2))
-    allocate(kpoint(1:3, 1:kpoints))
-    allocate(ReSignal(1:lambdaF_max, 1:lambdaI_max))
-    allocate(ImSignal(1:lambdaF_max, 1:lambdaI_max))
-    allocate(Reweight(1:lambdaI_max))
-    allocate(Imweight(1:lambdaI_max))
-    allocate(index2rank(kpoints))
-    allocate(pmcov(1:core_max,1:valence_max,3,1:kpoints))
-    allocate(pmvv(1:valence_max,17:conduction_max,3,1:kpoints))
-    allocate(zwfeh(max_cols,max_rows), stat=stat)
-    if (stat /= 0) stop 'Cannot allocate memory for zwfeh!'
-    allocate(exciton(max_cols,max_rows), stat=stat)
-    if (stat /= 0) stop 'Cannot allocate memory for exciton!'
-
-    !=======================================================================
-    ! Read k-points
-    !=======================================================================
-    open(5, file='KPOINTS_QMT001_EXC.OUT', status='old', action='read')
-    open(7, file='kpoints.txt', status='replace')
-    do k = 1, kpoints
-        read(5,*,iostat=io) dummy_int, kpoint(1,k), kpoint(2,k), kpoint(3,k), dummy, dummy, dummy, dummy, dummy
-        write(7,*) k, kpoint(1,k), kpoint(2,k), kpoint(3,k)
-    end do
+    allocate(kpoint(1:3,1:kpoints)) !allocate kpoints in three diemension x, y, z and number of kpoints
+    
+! read the k-points file
+    open(5,file='KPOINTS_QMT001_EXC.OUT', status='old', action='read')
+! write it again to make sure read it correctly and avoid using unusable coloumns in previous file produceed by exciting
+    open(unit = 7, file = 'kpoints.txt', status = 'old')
+    DO k =1,kpoints
+        read(5,*,iostat=io) dummy_int, kpoint(1,k),kpoint(2,k), kpoint(3,k), dummy, dummy, dummy, dummy, dummy
+        write(7,*,iostat=io) k, kpoint(1,k), kpoint(2,k), kpoint(3,k)
+    END DO
     rewind(7)
-    print*, 'Number of k-points:', k
+print*, 'Number of k-points and kpoint in each direction print out in kpoints.txt:', k
+            
+! read the BSE files for differents lambdaI
+! read all files for BSE and try to skip 13 first lines which is not useful
+DO i = 1, lambdaI_max
+    10 format('EXEVEC_BSE-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA',i6.6,'.OUT') 
+    write(BSEfile,10)i
+    Bunit = i + 520
+    open(Bunit, file = BSEfile, action='read', status='old')
 
-    !=======================================================================
-    ! Read BSE eigenvectors
-    !=======================================================================
-    B = 0.d0
-    do i = 1, lambdaI_max
-        write(BSEfile,'(A,I6.6,A)') 'EXEVEC_BSE-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA', i, '.OUT'
+    if (i == 1) then
+        Do rows = 1 , 3
+            READ(Bunit,*)
+        END DO
+! read number of rows in BSE files from header
+        READ(Bunit,'(A38,I8)') dummyString, numberOfRows
+! skip lines 5 to 13 in file 1 and read line 4 to get the rows in the file
+        Do rows = 5 , 13
+            READ(Bunit,*)
+        END DO
+    else
+        ! skip the first 13 lines in all other files
+        Do rows = 1 , 13
+            READ(Bunit,*)
+        END DO
+    ENDIF
+END DO 
+
+print*, 'Number of rows in BSE:', numberOfRows
+
+! for each file in BSE we need to make k-points equal by kpoint file which we read it already (kpoints from files and kcx to kcz in conduction band 
+! and kvx to kvz in valence band from BSE file must be equal to connect real and imaginary part of eigenvector to different lambda and kpoint number)
+B = 0d0
+DO i = 1, lambdaI_max
+    DO j= 1, numberOfRows
         Bunit = i + 520
-        open(Bunit, file=BSEfile, action='read', status='old')
+        READ(Bunit,*,iostat=io) dummy, lambdaI, ic, iv, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReBSE, ImBSE
+        DO k = 1, kpoints
+            if ((ABS(kpoint(1,k)-kcx).lt.1d-6).and.(ABS(kpoint(2,k)-kcy).lt.1d-6).and.(ABS(kpoint(3,k)-kcz).lt.1d-6))then
+            index = k
+            end if
+        END DO 
+        B(lambdaI,ic,iv,index,1) = ReBSE
+        B(lambdaI,ic,iv,index,2) = ImBSE
+    END DO
+END DO 
+print*, 'coincidence of conduction kpoint number with valence kpoint numbers in BSE'        
+! print some of real and imaginary part to make sure it's working correctly
+print*,'B', B(7,18,16,19,1),B(7,18,16,19,2)
+print*,'B', B(4,18,16,55,1),B(4,18,16,55,2)
+print*,'B', B(2,20,18,19,1),B(2,20,18,19,2) 
+print*,'B', B(1,18,16,19,1),B(1,18,16,19,2) 
+print*,'B', B(3,18,16,19,1),B(3,18,16,19,2)   
 
-        ! Skip header lines
-        do rows = 1, 13
-            read(Bunit,*)
-        end do
+! SO far, I read the BSE eigenvectors after optical pulse and get them for the exact k-points
+!(cause we want to get those eigenvectors which excite from valence to conduction at the exact k-point)
+!----------------------------------------------------------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------------------------------------------------- 
 
-        ! Read eigenvectors
-        do j = 1, numberOfRows
-            read(Bunit,*,iostat=io) dummy, lambdaI, ic, iv, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReBSE, ImBSE
-            do k = 1, kpoints
-                if (abs(kpoint(1,k)-kcx).lt.1d-6 .and. abs(kpoint(2,k)-kcy).lt.1d-6 .and. abs(kpoint(3,k)-kcz).lt.1d-6) then
-                    index = k
-                end if
-            end do
-            B(lambdaI, ic, iv, index, 1) = ReBSE
-            B(lambdaI, ic, iv, index, 2) = ImBSE
-        end do
-        close(Bunit)
-    end do
-    print*, 'BSE eigenvectors read successfully.'
+! read X-ray files for differents lambdaF
+do i = 1, lambdaF_max
+    20 format('EXEVEC_Xray-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA',i6.6,'.OUT') 
+    write(Xrayfile,20)i
+    Xunit = i + 200 
+    open(Xunit, file = Xrayfile, action='read', status='old')
 
-    !=======================================================================
-    ! Read X-ray eigenvectors
-    !=======================================================================
-    X = 0.d0
-    do i = 1, lambdaF_max
-        write(Xrayfile,'(A,I6.6,A)') 'EXEVEC_Xray-singlet-TDA-BAR_SCR-full_QMT001_LAMBDA', i, '.OUT'
+    if (i == 1) then
+        ! skip first 13 lines in file 1 and read line 4 to get the number of rows in the file
+        Do rowz = 1 , 3
+            READ(Xunit,*)
+        END DO
+
+        READ(Xunit,'(A38,I8)') dummyString, numberOfRowz
+! skip lines 5 to 13 in file 1 and read line 4 to get the rows in the file
+        Do rowz = 5 , 13
+            READ(Xunit,*)
+        END DO
+    else
+! skip the first 13 lines in all other files
+        Do rowz = 1 , 13
+            READ(Xunit,*)
+        END DO
+    ENDIF
+END DO 
+print*, 'Number of rows in x-ray:', numberOfRowz
+
+! for each file in BSE we need to make k-points equal by kpoint file which we read it already (kpoints from files and kcx to kcz in conduction band 
+! and kvx to kvz in valence band from BSE file must be equal to connect real and imaginary part of eigenvector to different lambda and kpoint number)
+X = 0d0
+DO i = 1, lambdaF_max
+    DO j= 1, numberOfRowz
         Xunit = i + 200
-        open(Xunit, file=Xrayfile, action='read', status='old')
+        READ(Xunit,*,iostat=io) dummy, lambdaF, ic, iy, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReXray, ImXray
+        DO k = 1, kpoints
+            if ((ABS(kpoint(1,k)-kcx).lt.1d-6).and.(ABS(kpoint(2,k)-kcy).lt.1d-6).and.(ABS(kpoint(3,k)-kcz).lt.1d-6))then
+            index = k
+            end if
+        END DO 
+        X(lambdaF,ic,iy,index,1) = ReXray
+        X(lambdaF,ic,iy,index,2) = ImXray
+    END DO
+END DO 
+print*, 'coincidence of conduction kpoint number with core kpoint numbers in Xray'               
+!print out some real and imaginary part of X-ray to test code
+print*,'A',  X(7,17,2,19,1),X(7,17,2,19,2)
+print*,'A',  X(4,18,2,55,1),X(4,18,2,55,2)
+print*,'A',  X(2,20,2,19,1),X(2,20,2,19,2) 
+print*,'A',  X(1,18,1,19,1),X(1,18,1,19,2) 
+print*,'A',  X(3,18,1,19,1),X(3,18,1,19,2) 
 
-        ! Skip header lines
-        do rowz = 1, 13
-            read(Xunit,*)
-        end do
+! SO far, I read the BSE eigenvectors after x-ray pulse and get them for the exact k-points 
+! (cause we want to get those eigenvectors which excite from core to valence at the exact k-point)
+!----------------------------------------------------------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------------------------------------------------- 
 
-        ! Read eigenvectors
-        do j = 1, numberOfRowz
-            read(Xunit,*,iostat=io) dummy, lambdaF, ic, iy, kcx, kcy, kcz, kvx, kvy, kvz, dummy, ReXray, ImXray
-            do k = 1, kpoints
-                if (abs(kpoint(1,k)-kcx).lt.1d-6 .and. abs(kpoint(2,k)-kcy).lt.1d-6 .and. abs(kpoint(3,k)-kcz).lt.1d-6) then
-                    index = k
-                end if
-            end do
-            X(lambdaF, ic, iy, index, 1) = ReXray
-            X(lambdaF, ic, iy, index, 2) = ImXray
-        end do
-        close(Xunit)
-    end do
-    print*, 'X-ray eigenvectors read successfully.'
 
-    !=======================================================================
-    ! [Remaining calculations: Signal, Weight, Excitons, Sigma]
-    !=======================================================================
-    ! All remaining loops for calculating ReSignal, ImSignal, Reweight, Imweight,
-    ! exciton wavefunctions, and sigma cross-sections can follow the same
-    ! indentation and cleaned style as above.
 
-End Program PreXAS
+
+!----------------------------------------------------------------------------------------
+! \sum_{k,lambda_F, lambda_I, c, v, y} (A^{\lambda_F}_{ck,yk}*A^{\lambda_I}_{ck,vk})^2  
+!----------------------------------------------------------------------------------------
+!OPEN (4, file = 'NEWRESULT.OUT', status='replace', action='readwrite')
+
+conduction_max = 22
+valence_max = 16
+core_max = 2
+kpoints = 64
+DO index = 1 , kpoints
+    DO lambdaF = 1, lambdaF_max
+        DO lambdaI = 1, lambdaI_max
+        Recoeff= 0d0
+        Imcoeff= 0d0
+            DO ic = 17, conduction_max
+                DO iv = 1, valence_max
+                    DO iy = 1, core_max
+                        Recoeff = Recoeff + (B(lambdaI,ic,iv,index,1)*X(lambdaF,ic,iy,index,1))+&
+                        (B(lambdaI,ic,iv,index,2)*X(lambdaF,ic,iy,index,2))
+                        Imcoeff = Imcoeff + (B(lambdaI,ic,iv,index,2)*X(lambdaF,ic,iy,index,1))-&
+                        (B(lambdaI,ic,iv,index,1)*X(lambdaF,ic,iy,index,2))
+                        !WRITE(4,*,iostat=io) index, lambdaI, lambdaF, iv, iy, ic, Recoeff + z*Imcoeff
+                    END DO ! iy core
+                END DO ! iv valence
+            END DO ! ic conduction
+        END DO ! number of lambda_I
+    END DO ! number of lambda_F
+END DO ! kpoints
+
+print*, 'print multiply eigenvectors for different-\lambda'
+ 
+
+
+
+!---------------------------------------------------------------------------------
+! \sum_{k, v, y} <\phi_vk|\phi_yk> momentum matrix element between core to valence
+!---------------------------------------------------------------------------------
+conduction_max = 22
+valence_max = 16
+core_max = 2
+kpoints = 64
+! try to read nonreadable momentum matrix element by exciting code that we modified the code to produce
+allocate(index2rank(index))
+index2rank = -1
+DO index = 1, kpoints
+    index2rank(index) = rank
+END DO
+        
+allocate(pmcov(1:core_max,1:valence_max,3,1:kpoints))
+DO index = 1, kpoints
+    DO iy = 1, core_max
+        DO iv = 1, valence_max
+            if (rank == index2rank(index)) then
+                inquire(iolength=recl) pmcov(iy,iv,:,index)
+                open(700,File='PMATCOV.OUT',Action='read',Form='UNFORMATTED',Access='DIRECT',Status='old',Recl=recl)
+                read(700,rec=index) pmcov(iy,iv,:,index)
+            end if !rank
+        END DO !core
+    END DO !valence
+END DO !index
+
+
+
+!------------------------------------------------------------------------------------------------------------------------------
+! Signal = \sum_{K,lambda_F, lambda_I} \sum_{v, y} <\phi_vk|\phi_yk> * \sum_{c} A^{*\lambda_F}_{ck,yk}*A^{\lambda_I}_{ck,vk}) 
+!------------------------------------------------------------------------------------------------------------------------------
+! allocate imaginary and real part of produced signal
+allocate(ReSignal(1:lambdaF_max,1:lambdaI_max)) 
+allocate(ImSignal(1:lambdaF_max,1:lambdaI_max)) 
+
+!open files related Final energy and initial energy to calculate differences (E_F - E_I)(ev)
+OPEN (1, file = 'BSE.energy.OUT', status='old', action='read') ! Energy of excite an elcetron after optical pulse
+OPEN (2, file = 'X-ray.energy.OUT', status='old', action='read') ! Energy of excite an elcetron after x-ray pulse
+OPEN (9, file = 'Signalnew.OUT', status='replace', action='readwrite') ! open a file to write the signal 
+
+DO lambdaF = 1, lambdaF_max
+READ(2,*,end=5000,iostat=io) eneXray
+    DO lambdaI = 1, lambdaI_max
+    READ(1,*,end=6000,iostat=io) eneBSE
+    deltaE = eneXray-eneBSE 
+    ImSignal(lambdaF,lambdaI) = 0d0
+    ReSignal(lambdaF,lambdaI) = 0d0      
+        DO index = 1 , kpoints
+            DO iy = 1, core_max
+                DO iv = 1, valence_max
+                    if (rank == index2rank(index)) then
+                        inquire(iolength=recl) pmcov(iy,iv,:,index)
+                        open(3,File='pmcov.OUT',Action='readwrite',Form='FORMATTED',Access='STREAM',Status='old')
+                        write(3,*) pmcov(iy,iv,:,index)
+                        !REAL(REAL(pmcov(iy,iv,1,index))), REAL(REAL(pmcov(iy,iv,2,index))), &
+                        !REAL(REAL(pmcov(iy,iv,3,index))), REAL(AIMAG(pmcov(iy,iv,1,index))),&
+                        !REAL(AIMAG(pmcov(iy,iv,2,index))), REAL(AIMAG(pmcov(iy,iv,3,index)))
+                    end if !rank
+                    RePhi_x = ((REAL(REAL(pmcov(iy,iv,1,index))))*(epsilon_x))
+                    ImPhi_x = ((REAL(AIMAG(pmcov(iy,iv,1,index))))*(epsilon_x))
+                    RePhi_y = ((REAL(REAL(pmcov(iy,iv,2,index))))*(epsilon_y))
+                    ImPhi_y = ((REAL(AIMAG(pmcov(iy,iv,2,index))))*(epsilon_y))
+                    RePhi_z = ((REAL(REAL(pmcov(iy,iv,3,index))))*(epsilon_z))
+                    ImPhi_z = ((REAL(AIMAG(pmcov(iy,iv,3,index))))*(epsilon_z))
+                    Recoeff= 0d0
+                    Imcoeff= 0d0
+                    DO ic = 17, conduction_max
+                        Recoeff = Recoeff + (B(lambdaI,ic,iv,index,1)*X(lambdaF,ic,iy,index,1))+&
+                        (B(lambdaI,ic,iv,index,2)*X(lambdaF,ic,iy,index,2))
+                        Imcoeff = Imcoeff + (B(lambdaI,ic,iv,index,2)*X(lambdaF,ic,iy,index,1))-&
+                        (B(lambdaI,ic,iv,index,1)*X(lambdaF,ic,iy,index,2))
+                        ReSignal(lambdaF,lambdaI) = (ReSignal(lambdaF,lambdaI))+((REAL(Recoeff)*(RePhi_x+RePhi_y+RePhi_z))-&
+                        ((REAL(Imcoeff)*(ImPhi_x+ImPhi_y+ImPhi_z))))
+                        ImSignal(lambdaF,lambdaI) = (ImSignal(lambdaF,lambdaI))+((REAL(Recoeff)*(ImPhi_x+ImPhi_y+ImPhi_z))+&
+                        ((REAL(Imcoeff)*(RePhi_x+RePhi_y+RePhi_z))))
+                    END DO !ic conduction band 
+                END DO !iy core
+            END DO !iv valence
+        END DO ! index --> k-points
+        WRITE(9,*,iostat=io) lambdaF, lambdaI, deltaE, eneBSE, &
+        ((abs(ReSignal(lambdaF,lambdaI)+ z*ImSignal(lambdaF,lambdaI)))**2d0)             
+    END DO !lambda_I
+    6000 continue
+    rewind(1)
+END DO !lambda_F
+5000 continue
+rewind(2)
+print*, 'print out the signal'
+!----------------------------------------------------------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------------------------------------------------- 
+
+
+
+
+
+!-----------------------------------------------------------------------------------------
+! \sum_{k, c, v} <\phi_ck|\phi_vk>  momentum matrix element between valence to conduction
+!-----------------------------------------------------------------------------------------   
+allocate(pmvv(1:valence_max,17:conduction_max,3,1:kpoints))
+DO index = 1, kpoints
+    DO iv = 1, valence_max
+        DO ic = 17 , conduction_max
+            if (rank == index2rank(index)) then
+                inquire(iolength=recl) pmvv(iv,ic,:,index)
+                open(70,File='PMATVV.OUT',Action='read',Form='UNFORMATTED',Access='DIRECT',Status='old',Recl=recl)
+                read(70,rec=index) pmvv(iv,ic,:,index)
+            end if !rank
+        END DO !valence
+    END DO ! conduction
+END DO !index
+
+! Calculate weigth for the signal by multiplying the coefficient into momentum matrix element
+OPEN (90, file = 'Weight.OUT', status='replace', action='readwrite') !open file to calculate weight
+
+
+!lambdaI_max = 120
+
+allocate(Reweight(1:lambdaI_max)) 
+allocate(Imweight(1:lambdaI_max)) 
+xI_min = 4.1
+xI_max = 5.1
+stepF = 0.1
+h = 0.326537
+! try to produce a sigma which is lorentzian broadening over the signal
+
+!xI = 5.06833921667 !this attribute you change to get different signal in different excitation energies
+xI = xI_min
+Do while (xI < xI_max + stepI)
+xI = xI + stepI
+    DO lambdaI = 1, lambdaI_max
+    READ(1,*,end=60000,iostat=io) eneBSE
+    Imweight(lambdaI) = 0d0
+    Reweight(lambdaI) = 0d0      
+        DO index = 1 , kpoints
+            DO iv = 1, valence_max
+                DO ic = 17 , conduction_max
+                    if (rank == index2rank(index)) then
+                        inquire(iolength=recl) pmvv(iv,ic,:,index)
+                        open(300,File='pmvv.OUT',Action='readwrite',Form='FORMATTED',Access='STREAM',Status='old')
+                        write(300,*) pmvv(iv,ic,:,index)
+                        !REAL(REAL(pmvv(iv,ic,1,index))), REAL(REAL(pmvv(iv,ic,2,index))), &
+                        !REAL(REAL(pmvv(iv,ic,3,index))), REAL(AIMAG(pmvv(iv,ic,1,index))),&
+                        !REAL(AIMAG(pmvv(iv,ic,2,index))), REAL(AIMAG(pmvv(iv,ic,3,index)))
+                    end if !rank
+                    reFe_x = ((REAL(REAL(pmvv(iv,ic,1,index))))*(epsilon_opt_x))
+                    imFe_x = ((REAL(AIMAG(pmvv(iv,ic,1,index))))*(epsilon_opt_x))
+                    reFe_y = ((REAL(REAL(pmvv(iv,ic,2,index))))*(epsilon_opt_y))
+                    imFe_y = ((REAL(AIMAG(pmvv(iv,ic,2,index))))*(epsilon_opt_y))
+                    reFe_z = ((REAL(REAL(pmvv(iv,ic,3,index))))*(epsilon_opt_z))
+                    imFe_z = ((REAL(AIMAG(pmvv(iv,ic,3,index))))*(epsilon_opt_z))
+                        Reweight(lambdaI) = Reweight(lambdaI)+((B(lambdaI,ic,iv,index,1)*(reFe_x+reFe_y+reFe_z))-&
+                        ((B(lambdaI,ic,iv,index,2)*(imFe_x+imFe_y+imFe_z))))
+                        Imweight(lambdaI) = Imweight(lambdaI)+((REAL(B(lambdaI,ic,iv,index,1))*(imFe_x+imFe_y+imFe_z))+&
+                        ((REAL(B(lambdaI,ic,iv,index,2))*(reFe_x+reFe_y+reFe_z)))) 
+                END DO !iv valence
+            END DO !ic conduction band
+        END DO ! index --> k-points
+        WRITE(90,*,iostat=io) lambdaI, eneBSE, ((abs(Reweight(lambdaI)+ z*Imweight(lambdaI)))**2d0)
+        !(abs(h-z*(xI-(eneBSE))))**2d0)        
+    END DO !lambda_I
+    60000 continue
+!END DO
+rewind(10)
+print*, 'weight'
+!----------------------------------------------------------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------------------------------------------------- 
+
+
+
+
+!OPEN (4000, file = 'FUNCTION.OUT', status='replace', action='readwrite')
+
+!allocate(zwfeh(1:121312))
+!READ(Xunit,*,iostat=io) zwfeh
+!zwfeh(j)=0d0
+!DO i = 1, numberofExcitonicWave
+!    30 format('excitonWavefunction-',i6.6,'-000001.xsf') 
+!    write(excitonfile,30)i
+!    Funit = i + 20
+!    open(Funit, file = excitonfile, action='read', status='old')
+        ! skip the first 24 lines in all other files
+!        Do rows = 1 , 24
+!            READ(Funit,*)
+!        END DO
+!    DO rows = 25, 121312
+!        READ(Funit,*,iostat=io) dummy, dummy, dummy, dummy, dummy, dummy, dummy, zwfeh(j)
+        !print*, 'read the excitonic wavefunction',rows, zwfeh(j)
+!        write(4000,*) rows, zwfeh(j)
+!    END DO
+!END DO
+
+
+OPEN (4000, file = 'FUNCTION.OUT', status='replace', action='readwrite')
+
+
+!wave1_max = wave2_max=  wave3_max= wave4_max=  wave5_max=  wave6_max=  wave7_max=  wave8_max = j
+!allocate(zwfeh(1:wave1_max, 1:wave2_max, 1:wave3_max, 1:wave4_max, 1:wave5_max, 1:wave6_max, 1:wave7_max, 1:wave8_max))
+!allocate(wave(1:j))
+allocate(zwfeh(max_cols,max_rows), stat=stat)
+
+
+!if (stat /=0) stop 'Cant allocate memory!'
+!DO i = 1, numberofExcitonicWave
+!    30 format('excitonWavefunction-',i6.6,'-000001.xsf') 
+!    write(excitonfile,30)i
+!    Funit = i + 20
+!    open(Funit, file = excitonfile, action='read', status='old')
+!        Do rows = 1 , 24
+!            READ(Funit,*)
+!        END DO
+!        DO rows = 25, max_rows
+!            READ(Funit,*,iostat=io) zwfeh(:,rows)
+!            if (stat>0) then
+!                stop 'An error occured while reading file'
+!                elseif (stat<0) then
+!                    tot_rows = rows-1
+!                exit
+!            endif
+!            write(4000,*) rows, zwfeh(:,rows)
+!        END DO
+!END DO
+
+
+if (stat /=0) stop 'Cant allocate memory!'
+DO lambdaI = 1, lambdaI_max
+    30 format('excitonWavefunction-',i6.6,'-000001.xsf') 
+    write(excitonfile,30)lambdaI
+    Funit = lambdaI + 20
+    open(Funit, file = excitonfile, action='read', status='old')
+        Do rows = 1 , 24
+            READ(Funit,*)
+        END DO
+        DO rows = 25, max_rows
+            READ(Funit,*,iostat=io) zwfeh(:,rows)
+            if (stat>0) then
+                stop 'An error occured while reading file'
+                elseif (stat<0) then
+                    tot_rows = rows-1
+                exit
+            endif
+            write(4000,*) rows, zwfeh(:,rows)
+        END DO
+END DO
+
+
+OPEN (5000, file = 'Final_exciton.OUT', status='replace', action='readwrite')
+
+allocate(exciton(max_cols,max_rows), stat=stat)
+  
+
+if (stat /=0) stop 'Cant allocate memory!'
+
+!    DO lambdaI = 1, lambdaI_max
+!        DO rows = 25, 121312
+!            !if (lambdaI .eq. i) then 
+!                exciton(:,rows) = exciton(:,rows) + (((abs(Reweight(lambdaI)+ z*Imweight(lambdaI)))**2d0)*&
+!                (zwfeh(:,rows)))
+!            !end if
+!            write(5000,*) rows, lambdaI, exciton(:,rows)
+!        END DO
+!    END DO
+
+
+!DO i = 1, numberofExcitonicWave
+    DO rows = 25, 121312
+        DO lambdaI = 1, lambdaI_max
+            exciton(:,rows) = exciton(:,rows) + (((abs(Reweight(lambdaI)+ z*Imweight(lambdaI)))**2d0)*&
+            (zwfeh(:,rows)))
+            !write(5000,*) rows, lambdaI, exciton(:,rows)
+        END DO
+        write(5000,*) exciton(:,rows)
+    END DO
+
+
+
+!exciton(cloumns,rows) = 0d0
+!exciton = 0d0
+!Do cloumns = 1, 8
+!    Do j = 25, 121312
+!        DO i = 1, numberofExcitonicWave
+!            DO lambdaI = 1, lambdaI_max
+!                if (lambdaI .eq. i) then 
+!                exciton(j) = exciton(j) + (((abs(Reweight(lambdaI)+ z*Imweight(lambdaI)))**2d0)*&
+!                (zwfeh(wave(1:j))))
+!                end if
+!                write(5000,*) rows, exciton(j)
+!            END DO
+!        END DO
+    !write(5000,*) j, exciton
+!    END DO
+!END DO
+
+
+
+
+
+
+!FINAL LOOP
+! So far we calculate the absolute value of weight and the signal 
+! Now, we want to add the broadening for both weight and signal based on text file and multiply each other
+!------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+!Sigma = \sum_{lambda_F, lambda_I}  {|Weight(lambdaI,c,v,k)| * (1)/(\Gamma^2+ (\omega_I-eneBSE)^2)} * {|Signal(lambda_F,lambda_I,v,y,k)| *(1)/(\Gamma^2+ (\omega_F-DeltaE)^2)}   
+!------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+OPEN (8, file = 'sigmanew.OUT', status='replace', action='readwrite') !open file for the main sigma file which calculate cross-section
+xF_min = 257.00
+xF_max = 266.00
+stepF = 0.01
+m = 0.489805
+!h = 0.326537
+h = 0.489805
+! try to produce a sigma which is lorentzian broadening over the signal
+
+xI = 5.06833921667 !this attribute you change to get different signal in different excitation energies
+xF = xF_min
+Do while (xF < xF_max + stepF)
+xF = xF + stepF
+sigma = 0d0
+    DO lambdaF = 1, lambdaF_max
+    READ(2,*,end=7000,iostat=io) eneXray
+        DO lambdaI = 1, lambdaI_max
+        READ(1,*,end=8000,iostat=io) eneBSE
+        deltaE = eneXray-eneBSE
+        !sigma = sigma+((((abs(ReSignal(lambdaF,lambdaI)+z*ImSignal(lambdaF,lambdaI)))**2d0)/((h**2d0+((xF-deltaE)**2d0))))*&
+        !(((abs(Reweight(lambdaI)+z*Imweight(lambdaI)))**2d0)/((h**2d0+(((xI-(eneBSE)))**2d0)))))
+        sigma = sigma+((((abs(ReSignal(lambdaF,lambdaI)+z*ImSignal(lambdaF,lambdaI)))**2d0)/&
+        (abs(h-z*(xF-deltaE)-z*(xI-(eneBSE))))**2d0)*&
+        (((abs(Reweight(lambdaI)+z*Imweight(lambdaI)))**2d0)/(abs(m-z*(xI-(eneBSE))))**2d0))
+        WRITE(8,*) xF, xI, sigma
+        END DO !lambda_I
+        8000 continue
+        rewind(1)
+    END DO !lambda_F
+    7000 continue
+    rewind(2)
+END DO !xF x-ray energy
+
+
+
+
+
+OPEN (4000, file = 'DATA.OUT', status='replace', action='readwrite') !open file for the main sigma file which calculate cross-section
+!xI_min = 4.1
+!xI_max = 5.1
+!stepI = 0.1
+!h = 0.489805
+! try to produce a sigma which is lorentzian broadening over the signal
+
+!this attribute you change to get different signal in different excitation energies
+!xI = 0.5d0 * (xI_min + xI_max)
+!deltaE = 0.d0
+!Do while (xI < xI_max + stepI)
+!xI = xI + stepI
+datar = 0d0
+    DO lambdaF = 1, lambdaF_max
+    READ(2,*,end=70000,iostat=io) eneXray
+            DO lambdaI = 1, lambdaI_max
+            READ(1,*,end=80000,iostat=io) eneBSE
+        !datar = datar+(((abs(Reweight(lambdaI)+z*Imweight(lambdaI)))**2d0)/((h**2d0+(((xI-(eneBSE)))**2d0))))
+            datar = (((abs(ReSignal(lambdaF,lambdaI)+z*ImSignal(lambdaF,lambdaI)))**2d0))*&
+            ((abs(Reweight(lambdaI)+ z*Imweight(lambdaI)))**2d0) 
+            !if (datar > 1.d-2) 
+            WRITE(4000,*) lambdaF, lambdaI, datar
+        END DO !lambda_I
+        80000 continue
+        !rewind(1)
+    END DO !lambda_I
+    70000 continue
+    !rewind(2)
+END DO !xF x-ray energy
+
+
+close(1)
+close(2)
+close(3) 
+close(4)
+close(5)
+close(6)
+close(7)
+close(8)
+close(10)
+close(700)
+    
+    
+DO i = 1, 30
+    Bunit = i + 520
+    close(Bunit)
+END DO
+
+
+do i = 1, 30
+    Xunit = i + 10
+    close(Xunit)
+end do   
+            
+End Program PreXAS-Exciton
