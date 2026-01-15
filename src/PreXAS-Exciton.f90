@@ -189,17 +189,6 @@ DO i = 1, lambdaF_max
 END DO 
 print*, 'coincidence of conduction kpoint number with core kpoint numbers in Xray'               
 !print out some real and imaginary part of X-ray to test code
-print*,'A',  X(7,17,2,19,1),X(7,17,2,19,2)
-print*,'A',  X(4,18,2,55,1),X(4,18,2,55,2)
-print*,'A',  X(2,20,2,19,1),X(2,20,2,19,2) 
-print*,'A',  X(1,18,1,19,1),X(1,18,1,19,2) 
-print*,'A',  X(3,18,1,19,1),X(3,18,1,19,2) 
-
-! SO far, I read the BSE eigenvectors after x-ray pulse and get them for the exact k-points 
-! (cause we want to get those eigenvectors which excite from core to valence at the exact k-point)
-!----------------------------------------------------------------------------------------------------------------------------------------------
-!---------------------------------------------------------------------------------------------------------------------------------------------- 
-
 
 
 
@@ -276,7 +265,7 @@ allocate(ImSignal(1:lambdaF_max,1:lambdaI_max))
 !open files related Final energy and initial energy to calculate differences (E_F - E_I)(ev)
 OPEN (1, file = 'BSE.energy.OUT', status='old', action='read') ! Energy of excite an elcetron after optical pulse
 OPEN (2, file = 'X-ray.energy.OUT', status='old', action='read') ! Energy of excite an elcetron after x-ray pulse
-OPEN (9, file = 'Signalnew.OUT', status='replace', action='readwrite') ! open a file to write the signal 
+OPEN (9, file = 'Signal.OUT', status='replace', action='readwrite') ! open a file to write the signal 
 
 DO lambdaF = 1, lambdaF_max
 READ(2,*,end=5000,iostat=io) eneXray
@@ -417,7 +406,7 @@ print*, 'weight'
 !Sigma = \sum_{lambda_F, lambda_I}  {|Weight(lambdaI,c,v,k)| * (1)/(\Gamma^2+ (\omega_I-eneBSE)^2)} * {|Signal(lambda_F,lambda_I,v,y,k)| *(1)/(\Gamma^2+ (\omega_F-DeltaE)^2)}   
 !------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-OPEN (8, file = 'sigmanew.OUT', status='replace', action='readwrite') !open file for the main sigma file which calculate cross-section
+OPEN (8, file = 'sigma.OUT', status='replace', action='readwrite') !open file for the main sigma file which calculate cross-section
 
 ! try to produce a sigma which is lorentzian broadening over the signal
 
